@@ -175,7 +175,7 @@ public:
         int octaves,
         RealType baseFrequency,
         RealType persistence = RealType(.5),
-        Functor f = [](const RealType& noiseVal) {return noiseVal; }
+        const Functor& f = [](const RealType& noiseVal) {return noiseVal; }
     )
     {
         RealType frequency = baseFrequency;
