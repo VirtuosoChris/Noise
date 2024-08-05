@@ -1,10 +1,9 @@
-#ifndef PERLIN_NOISE_H_INCLUDED
-#define PERLIN_NOISE_H_INCLUDED
+#pragma once
 
 /*
 MIT License
 
-Copyright(c) 2012 Christopher Pugh
+Copyright(c) 2012-2024 Christopher Pugh
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files(the "Software"), to deal
@@ -26,24 +25,36 @@ SOFTWARE.
 
 */
 
-///\todo replace srand(time(0)) and other random calls with better uniform random generation
+/*
+
+todos:
+havent tested this heavily refactored version yet
+arbitrary dimensionality
+shaders (fixed 2d)
+shaders (generated?)
+other noise types
+threading
+port sample proc gen examples
+*/
 
 #include <Eigen/Geometry>
-#include <ctime>
-
-#define PERLIN_TABLE_SIZE 0x100 //256 entries in table
+#include <vector>
+#include <random>
+#include <algorithm>
+#include <cmath>
+#include <concepts>
 
 template <class T>
 inline T s_curve(T t)
 {
-    const float tSquared = t*t;
-    return 3.0 * tSquared - 2.0 * t * tSquared;
+    const T tSquared = t*t;
+    return T(3.0) * tSquared - T(2.0) * t * tSquared;
 }
 
 template<class T>
 inline T lerp(T a, T b, T t)
 {
-    return (1.0 - t) * a + t*b;
+    return (T(1.0) - t) * a + t*b;
 }
 
 template<class T>
@@ -52,44 +63,68 @@ inline T s_interpolate(T a, T b, T t)
     return lerp(a, b, s_curve(t));
 }
 
-inline float randomFloatInRange(const float& min, const float& max)
+template<typename Functor, typename RealType>
+concept ValidFunctor = requires(Functor f, RealType value)
 {
-    return (((float)rand() / (float)RAND_MAX) * (max-min)) + min;
-}
+    { f(value) } -> std::same_as<RealType>;
+};
 
-template<int DIMENSIONS>
+template <typename RealType = double>
+requires std::is_floating_point_v<RealType>
 class PerlinGenerator
 {
-public:
+private:
 
-    std::vector<Eigen::Vector2d> gradients;
+    static constexpr std::size_t PERLIN_TABLE_SIZE = 0x100;
+
+    using Vector2 = Eigen::Matrix<RealType, 2, 1>;
+
+    std::vector<Vector2> gradients;
     std::vector<unsigned int> permutations;
 
-    PerlinGenerator()
+    void initialize(std::default_random_engine& generator)
     {
-        gradients.reserve(PERLIN_TABLE_SIZE);
-        permutations.reserve(PERLIN_TABLE_SIZE);
+        gradients.resize(PERLIN_TABLE_SIZE);
+        permutations.resize(PERLIN_TABLE_SIZE);
+
+        std::uniform_real_distribution<RealType> distribution(-1.0, 1.0);
 
         //create our permutations table and stuff
-        for(unsigned int i = 0; i < PERLIN_TABLE_SIZE; i++)
+        for (unsigned int i = 0; i < PERLIN_TABLE_SIZE; i++)
         {
-            permutations.push_back( rand() % PERLIN_TABLE_SIZE);
+            permutations[i] = i;
 
-            gradients[i] = Eigen::Vector2d(randomFloatInRange(-1.0f, 1.0f), randomFloatInRange(-1.0f, 1.0f));
+            gradients[i] = Vector2(distribution(generator), distribution(generator));
             gradients[i].normalize();
         }
+
+        std::shuffle(permutations.begin(), permutations.end(), generator);
     }
 
-    double calculateNoise(Eigen::Vector2d atPos, double wavelength)
+public:
+
+    /// Initialize with a random seed
+    PerlinGenerator()
     {
-        const double frequency = 1.0 / wavelength;
-        const double invRoot2 = 1.0 / sqrt(2.0); //normalizing factor since vector in unit square has max length root 2
+        std::default_random_engine generator(std::random_device{}());
+        initialize(generator);
+    }
 
-        Eigen::Vector2d dArrayIndices = atPos * frequency;
+    /// Initialize with a given seed
+    PerlinGenerator(std::size_t seed)
+    {
+        std::default_random_engine generator(seed);
+        initialize(generator);
+    }
 
-        Eigen::Vector2d baseIndices = Eigen::Vector2d( std::floor(dArrayIndices[0]), std::floor(dArrayIndices[1]));
+    /// evaluate single octave of gradient noise with given location and frequency
+    RealType gradientNoise(Vector2 atPos, RealType frequency)
+    {
+        Vector2 dArrayIndices = atPos * frequency;
 
-        Eigen::Vector2d lerpParams = dArrayIndices - baseIndices;
+        Vector2 baseIndices = Vector2( std::floor(dArrayIndices[0]), std::floor(dArrayIndices[1]));
+
+        Vector2 lerpParams = dArrayIndices - baseIndices;
 
         Eigen::Vector2i tableIndices =  baseIndices.cast<int>(); //cast to int
 
@@ -99,8 +134,6 @@ public:
         Eigen::Vector2i incrementedIndices = tableIndices;
         incrementedIndices[0]++; incrementedIndices[1]++;
 
-        //mod with 256.  The and automagically takes care of getting rid of the negative table indices we might otherwise get.  Thanks Ken Perlin
-        //and two's complement!
         incrementedIndices[0] &= 0xff;
         incrementedIndices[1] &= 0xff;
 
@@ -109,124 +142,93 @@ public:
         const int bottomLeftIndex = (tableIndices[0] + permutations[tableIndices[1]])&0xff;
         const int bottomRightIndex = (incrementedIndices[0] + permutations[tableIndices[1]])&0xff;
 
-        const Eigen::Vector2d& upperLeftGrad = gradients[topLeftIndex];
-        const Eigen::Vector2d& upperRightGrad = gradients[topRightIndex];
-        const Eigen::Vector2d& lowerLeftGrad = gradients[bottomLeftIndex];
-        const Eigen::Vector2d& lowerRightGrad = gradients[bottomRightIndex];
+        const Vector2& upperLeftGrad = gradients[topLeftIndex];
+        const Vector2& upperRightGrad = gradients[topRightIndex];
+        const Vector2& lowerLeftGrad = gradients[bottomLeftIndex];
+        const Vector2& lowerRightGrad = gradients[bottomRightIndex];
 
-        ///\todo : scale, setting shit right
-        Eigen::Vector2d tempVec4 = lerpParams;//lowerLeftCorner-atPos;
-        Eigen::Vector2d tempVec1 = Eigen::Vector2d(lerpParams[0], -(1.0 - lerpParams[1]));//upperLeftCorner-atPos;
-        Eigen::Vector2d tempVec2 = Eigen::Vector2d(- (1.0 - lerpParams[0]), -(1.0 - lerpParams[1]));//upperRightCorner-atPos;
-        Eigen::Vector2d tempVec3 = Eigen::Vector2d(- (1.0 - lerpParams[0]), lerpParams[1]);  //lowerRightCorner-atPos;
+        Vector2 tempVec4 = lerpParams;
+        Vector2 tempVec1 = Vector2(lerpParams[0], -(1.0 - lerpParams[1]));
+        Vector2 tempVec2 = Vector2(- (1.0 - lerpParams[0]), -(1.0 - lerpParams[1]));
+        Vector2 tempVec3 = Vector2(- (1.0 - lerpParams[0]), lerpParams[1]);
 
-        double ulVal = (tempVec1).dot(upperLeftGrad);
-        double urVal = (tempVec2).dot(upperRightGrad);
-        double lrVal = (tempVec3).dot(lowerRightGrad);
-        double llVal = (tempVec4).dot(lowerLeftGrad);
+        RealType ulVal = (tempVec1).dot(upperLeftGrad);
+        RealType urVal = (tempVec2).dot(upperRightGrad);
+        RealType lrVal = (tempVec3).dot(lowerRightGrad);
+        RealType llVal = (tempVec4).dot(lowerLeftGrad);
 
-        double lerpXTop =  s_interpolate(ulVal, urVal, lerpParams[0]);
-        double lerpXBottom = s_interpolate(llVal, lrVal, lerpParams[0]);
+        RealType lerpXTop =  s_interpolate(ulVal, urVal, lerpParams[0]);
+        RealType lerpXBottom = s_interpolate(llVal, lrVal, lerpParams[0]);
 
-        double result = s_interpolate(lerpXBottom, lerpXTop, lerpParams[1]);
+        RealType result = s_interpolate(lerpXBottom, lerpXTop, lerpParams[1]);
 
-        ///\todo this should never have to be done!
-        result = std::min(1.0, result);
-        result = std::max(-1.0,result);
+        result = std::min(RealType(1.0), result);
+        result = std::max(RealType(-1.0), result);
 
         return result;
     }
+
+    template<ValidFunctor<RealType> Functor, bool normalize=true>
+    RealType fractalSumNoise
+    (
+        Vector2 atPos,
+        int octaves,
+        RealType baseFrequency,
+        RealType persistence = RealType(.5),
+        Functor f = [](const RealType& noiseVal) {return noiseVal; }
+    )
+    {
+        RealType frequency = baseFrequency;
+        RealType geoAmplitude = 1.0;
+        RealType sum = 0.0;
+
+        RealType normFactor = 0.0;
+
+        for (int i = 0; i < octaves; i++, geoAmplitude *= persistence, frequency *= RealType(2.0))
+        {
+            // assumes that the functor is monotonically increasing so 1.0 from the gradient will map to the largest value in our functor-noise
+            normFactor += geoAmplitude * f(RealType(1.0));
+
+            RealType noiseVal = geoAmplitude * f(gradientNoise(atPos, frequency));
+            sum += noiseVal;
+        }
+
+        if (normalize) sum /= normFactor;
+
+        return sum;
+    }
+
+    RealType fractalNoiseAbs(Vector2 atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5))
+    {
+        return fractalSumNoise
+        (
+            atPos,
+            octaves,
+            baseFrequency,
+            persistence,
+            [](const RealType& noiseVal)
+            {
+                return std::abs<RealType>(noiseVal);
+            }
+        );
+    }
+
+    template<std::uint32_t axis = 0>
+    RealType fractalNoiseSin(Vector2 atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5))
+    {
+        static_assert(axis < 2, "fractalNoiseSin() Axis element out of bounds");
+
+        RealType offset = atPos[axis];
+        return fractalSumNoise
+        (
+            atPos,
+            octaves,
+            baseFrequency,
+            persistence,
+            [=](const RealType& noiseVal)
+            {
+                return std::sin<RealType>(offset + fractalNoiseAbs(atPos, octaves, baseFrequency, persistence));
+            }
+        );
+    }
 };
-
-inline void generatePerlinNoiseSlice(unsigned char* image, unsigned int width, unsigned int height, float amplitude, float wavelength)
-{
-    //get gradient vectors
-    const float frequency = 1.0 / wavelength;
-    const unsigned int gradSize = 256;
-
-    Eigen::Vector2f gradientArrays[gradSize][gradSize];
-    srand(time(0));
-
-    //generate gradient vectors
-    for(int i = 0; i <gradSize; i++)
-    {
-        for(int j = 0; j < gradSize; j++)
-        {
-            gradientArrays[i][j] = Eigen::Vector2f(randomFloatInRange(-1.0f, 1.0f), randomFloatInRange(-1.0f, 1.0f));
-            gradientArrays[i][j].normalize();
-        }
-    }
-
-    for(unsigned int h = 0; h < height; h++)
-    {
-        for(unsigned int w = 0; w < width; w++)
-        {
-            float xOff = float(w);
-            float yOff = float(h);
-
-            Eigen::Vector2f atPos = Eigen::Vector2f(xOff, yOff);
-
-            float tmpA = xOff * frequency;
-            float tmpB = yOff * frequency;
-
-            int leftIndex =  (int)std::floor(tmpA);
-            int rightIndex = leftIndex+1;
-            int bottomIndex = (int)std::floor(tmpB);
-            int topIndex = bottomIndex+1;
-
-            ///todo bottom wraparound
-            int leftIndexMod = leftIndex % gradSize;
-            int rightIndexMod = rightIndex% gradSize;
-            int bottomIndexMod = bottomIndex% gradSize;
-            int topIndexMod = topIndex% gradSize;
-
-            Eigen::Vector2f& upperLeftGrad = gradientArrays[topIndexMod][leftIndexMod];
-            Eigen::Vector2f& upperRightGrad = gradientArrays[topIndexMod][rightIndexMod];
-            Eigen::Vector2f& lowerLeftGrad = gradientArrays[bottomIndexMod][leftIndexMod];
-            Eigen::Vector2f& lowerRightGrad = gradientArrays[bottomIndexMod][rightIndexMod];
-
-            float leftPos = leftIndex * wavelength;
-            float bottomPos = bottomIndex * wavelength;
-
-            Eigen::Vector2f upperLeftCorner = Eigen::Vector2f(leftPos , bottomPos + wavelength);
-            Eigen::Vector2f lowerLeftCorner = Eigen::Vector2f(leftPos, bottomPos);
-            Eigen::Vector2f upperRightCorner = Eigen::Vector2f(leftPos + wavelength, bottomPos + wavelength);
-            Eigen::Vector2f lowerRightCorner = Eigen::Vector2f(leftPos + wavelength, bottomPos);
-
-            Eigen::Vector2f tempVec1 = upperLeftCorner-atPos;
-            Eigen::Vector2f tempVec2 = upperRightCorner-atPos;
-            Eigen::Vector2f tempVec3 = lowerRightCorner-atPos;
-            Eigen::Vector2f tempVec4 = lowerLeftCorner-atPos;
-
-            const float invRoot2 = 1.0f / sqrt(2.0);
-
-            tempVec1 *= frequency * invRoot2;
-            tempVec2 *= frequency * invRoot2;
-            tempVec3 *= frequency * invRoot2;
-            tempVec4 *= frequency * invRoot2;
-
-            float ulVal = (tempVec1).dot(upperLeftGrad);
-            float urVal = (tempVec2).dot(upperRightGrad);
-            float lrVal = (tempVec3).dot(lowerRightGrad);
-            float llVal = (tempVec4).dot(lowerLeftGrad);
-
-            float xLerpVal = (atPos[0] - upperLeftCorner[0]) / (upperRightCorner[0] - upperLeftCorner[0]);
-
-            float lerpXTop =  s_interpolate(ulVal, urVal, xLerpVal);
-            float lerpXBottom = s_interpolate(llVal, lrVal, xLerpVal);
-
-            float yLerpVal = (atPos[1] - lowerLeftCorner[1]) / (upperLeftCorner[1] - lowerLeftCorner[1]);
-
-            float result = s_interpolate(lerpXBottom, lerpXTop, yLerpVal);
-
-            result = std::min(1.0f, result);
-            result = std::max(-1.0f,result);
-
-            result = ((result + 1.0) * .5);
-
-            image[h * width + w] = (unsigned char)(result * 255.0f);
-        }
-    }
-}
-
-#endif
