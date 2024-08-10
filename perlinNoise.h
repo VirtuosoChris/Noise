@@ -77,8 +77,8 @@ private:
 
     using Vector2 = Eigen::Matrix<RealType, 2, 1>;
 
-    std::vector<Vector2> gradients;
-    std::vector<unsigned int> permutations;
+    std::array<Vector2, PERLIN_TABLE_SIZE> gradients;
+    std::array<unsigned int, PERLIN_TABLE_SIZE> permutations;
 
     inline int gradientIndex(int x, int y) const
     {
@@ -101,9 +101,6 @@ public:
     template<std::uniform_random_bit_generator G>
     PerlinGenerator(G&& generator)
     {
-        gradients.resize(PERLIN_TABLE_SIZE);
-        permutations.resize(PERLIN_TABLE_SIZE);
-
         std::uniform_real_distribution<RealType> distribution(-1.0, 1.0);
 
         //create our permutations table and stuff

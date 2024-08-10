@@ -2,6 +2,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include <iostream>
+#include <thread>
+#include <latch>
 
 inline std::uint8_t saturatePixel(double x)
 {
@@ -30,14 +32,32 @@ void makeNoiseImage(const std::string& path, int width, int height, const f& pix
 
     imgBuffer.resize(width * height * channels);
 
+    std::latch rowLatch(height);
+
+    std::vector<std::jthread> threads;
+    threads.reserve(height);
+
     for (int y = 0; y < height; y++)
     {
-        for (int x = 0; x < width; x++)
-        {
-            double val = pix(p, Eigen::Vector2d(x, y));
-            writePixel(imgBuffer.data(), x, y, width, height, channels, val);
-        }
+
+        threads.push_back(
+            std::jthread(
+                [&, y] {
+
+                    for (int x = 0; x < width; x++)
+                    {
+                        double val = pix(p, Eigen::Vector2d(x, y));
+                        writePixel(imgBuffer.data(), x, y, width, height, channels, val);
+                    }
+
+                    rowLatch.count_down();
+
+                }
+            )
+        );
     }
+
+    rowLatch.wait();
 
     stbi_write_jpg(path.c_str(), width, height, channels, imgBuffer.data(), 100);
 }
