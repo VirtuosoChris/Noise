@@ -3,7 +3,7 @@
 /*
 MIT License
 
-Copyright(c) 2012-2024 Christopher Pugh
+Copyright(c) 2012-2024 Virtuoso Engine
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files(the "Software"), to deal
@@ -26,9 +26,7 @@ SOFTWARE.
 */
 
 /*
-
 todos:
-havent tested this heavily refactored version yet
 arbitrary dimensionality
 shaders (fixed 2d)
 shaders (generated?)
@@ -82,7 +80,26 @@ private:
     std::vector<Vector2> gradients;
     std::vector<unsigned int> permutations;
 
-    void initialize(std::default_random_engine& generator)
+    inline int gradientIndex(int x, int y) const
+    {
+        int outIdx = (x + permutations[y & 0xff]) & 0xff;
+        return outIdx;
+    }
+
+    inline const Vector2 gradientForCoord(int x, int y) const
+    {
+        return gradients[gradientIndex(x, y)];
+    }
+
+    static inline RealType clamp(const RealType& val)
+    {
+        return std::clamp(val, -1.0, 1.0);
+    }
+
+public:
+
+    template<std::uniform_random_bit_generator G>
+    PerlinGenerator(G&& generator)
     {
         gradients.resize(PERLIN_TABLE_SIZE);
         permutations.resize(PERLIN_TABLE_SIZE);
@@ -101,37 +118,7 @@ private:
         std::shuffle(permutations.begin(), permutations.end(), generator);
     }
 
-public:
-
-    /// Initialize with a random seed
-    PerlinGenerator()
-    {
-        std::default_random_engine generator(std::random_device{}());
-        initialize(generator);
-    }
-
-    /// Initialize with a given seed
-    PerlinGenerator(std::size_t seed)
-    {
-        std::default_random_engine generator(seed);
-        initialize(generator);
-    }
-
-    inline int gradientIndex(int x, int y) const
-    {
-        int outIdx = (x + permutations[y & 0xff]) & 0xff;
-        return outIdx;
-    }
-
-    inline const Vector2 gradientForCoord(int x, int y) const
-    {
-        return gradients[gradientIndex(x,y)];
-    }
-
-    static inline RealType clamp(const RealType& val)
-    {
-        return std::clamp(val, -1.0, 1.0);
-    }
+    PerlinGenerator(std::size_t seed = std::random_device{}()) : PerlinGenerator(std::default_random_engine(seed)) {}
 
     /// evaluate single octave of gradient noise with given location and frequency
     RealType gradientNoise(Vector2 atPos, RealType frequency) const
@@ -178,18 +165,8 @@ public:
         return result;
     }
 
-    RealType fractalSumNoise
-    (
-        Vector2 atPos,
-        int octaves,
-        RealType baseFrequency,
-        RealType persistence = RealType(.5)
-    ) const
-    {
-        return fractalSumNoise(atPos, octaves, baseFrequency, persistence, [](const RealType& noiseVal) {return noiseVal; });
-    }
-
-    template<ValidFunctor<RealType> Functor, bool normalize=true>
+    // multiple octaves of gradient noise, processed with a functor
+    template<ValidFunctor<RealType> Functor, bool normalize = true>
     RealType fractalSumNoise
     (
         Vector2 atPos,
@@ -217,6 +194,18 @@ public:
         if (normalize) sum /= normFactor;
 
         return sum;
+    }
+
+    // multiple octaves of gradient noise
+    RealType fractalSumNoise
+    (
+        Vector2 atPos,
+        int octaves,
+        RealType baseFrequency,
+        RealType persistence = RealType(.5)
+    ) const
+    {
+        return fractalSumNoise(atPos, octaves, baseFrequency, persistence, [](const RealType& noiseVal) {return noiseVal; });
     }
 
     RealType fractalNoiseAbs(Vector2 atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5)) const
