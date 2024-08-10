@@ -1,0 +1,75 @@
+#include "PerlinNoise.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+#include <iostream>
+
+inline std::uint8_t saturatePixel(double x)
+{
+    double scaledValue = ((x + 1.0) * 0.5) * 255.0; // map [-1, 1] to [0, 255]
+    return static_cast<std::uint8_t>(std::clamp(scaledValue, 0.0, 255.0));
+}
+
+inline void writePixel(std::uint8_t* buffer, int x, int y, int width, int height, int channels, double val)
+{
+    int pixelCoord = (x + y * height);
+
+    for (int i = 0; i < channels; i++)
+    {
+        buffer[pixelCoord * channels + i] = saturatePixel(val);
+    }
+}
+
+template <typename f>
+void makeNoiseImage(const std::string& path, int width, int height, const f& pix)
+{
+    PerlinGenerator<double> p;
+
+    std::vector<std::uint8_t> imgBuffer;
+
+    const int channels = 3;
+
+    imgBuffer.resize(width * height * channels);
+
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            double val = pix(p, Eigen::Vector2d(x, y));
+            writePixel(imgBuffer.data(), x, y, width, height, channels, val);
+        }
+    }
+
+    stbi_write_jpg(path.c_str(), width, height, channels, imgBuffer.data(), 100);
+}
+
+
+int main(void)
+{
+    const auto& grad = [](const PerlinGenerator<double>& p, const Eigen::Vector2d& coord) { return p.gradientNoise(coord, 1.0 / 32.0); };
+
+    const auto& fract = [](const PerlinGenerator<double>& p, const Eigen::Vector2d& coord)
+        {
+            return p.fractalSumNoise(coord, 4,  1.0 / 256.0);
+        };
+
+    const auto& fract2 = [](const PerlinGenerator<double>& p, const Eigen::Vector2d& coord)
+        {
+            return p.fractalSumNoise(coord, 4, 1.0 / 256.0, .8, [](const double& noiseVal) {return noiseVal; });
+        };
+
+    const auto& fractAbs = [](const PerlinGenerator<double>& p, const Eigen::Vector2d& coord)
+        {
+            return p.fractalNoiseAbs(coord, 4, 1.0 / 128.0);
+        };
+
+    std::cout << "Making test1 (gradient slice)" << std::endl;
+    makeNoiseImage("test1.jpg", 256, 256, grad);
+    std::cout << "Making test 2 (fractal noise)" << std::endl;
+    makeNoiseImage("test2.jpg", 512, 512, fract);
+    std::cout << "Making test 3 (fractal noise, high persistence)" << std::endl;
+    makeNoiseImage("test3.jpg", 512, 512, fract2);
+
+    std::cout << "Making test 4 (fractal noise, high persistence)" << std::endl;
+    makeNoiseImage("test4.jpg", 128, 128, fractAbs);
+
+}

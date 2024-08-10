@@ -117,10 +117,26 @@ public:
         initialize(generator);
     }
 
-    /// evaluate single octave of gradient noise with given location and frequency
-    RealType gradientNoise(Vector2 atPos, RealType frequency)
+    inline int gradientIndex(int x, int y) const
     {
-        Vector2 dArrayIndices = atPos * frequency;
+        int outIdx = (x + permutations[y & 0xff]) & 0xff;
+        return outIdx;
+    }
+
+    inline const Vector2 gradientForCoord(int x, int y) const
+    {
+        return gradients[gradientIndex(x,y)];
+    }
+
+    static inline RealType clamp(const RealType& val)
+    {
+        return std::clamp(val, -1.0, 1.0);
+    }
+
+    /// evaluate single octave of gradient noise with given location and frequency
+    RealType gradientNoise(Vector2 atPos, RealType frequency) const
+    {
+        Vector2 dArrayIndices = atPos * (frequency);
 
         Vector2 baseIndices = Vector2( std::floor(dArrayIndices[0]), std::floor(dArrayIndices[1]));
 
@@ -128,55 +144,49 @@ public:
 
         Eigen::Vector2i tableIndices =  baseIndices.cast<int>(); //cast to int
 
-        tableIndices[0] &= 0xff;
-        tableIndices[1] &= 0xff;
+        const Vector2& lowerLeftGrad = gradientForCoord(tableIndices[0], tableIndices[1]);
+        const Vector2& upperLeftGrad = gradientForCoord(tableIndices[0], tableIndices[1] + 1);
+        const Vector2& lowerRightGrad = gradientForCoord(tableIndices[0] + 1, tableIndices[1]);
+        const Vector2& upperRightGrad = gradientForCoord(tableIndices[0] + 1, tableIndices[1] + 1);
 
-        Eigen::Vector2i incrementedIndices = tableIndices;
-        incrementedIndices[0]++; incrementedIndices[1]++;
+        Eigen::Vector2d distLowerLeft = lerpParams;//lowerLeftCorner-atPos;
+        Eigen::Vector2d distUpperLeft = Eigen::Vector2d(lerpParams[0], lerpParams[1] - 1.0);//upperLeftCorner-atPos;
+        Eigen::Vector2d distUpperRight = Eigen::Vector2d(lerpParams[0] - 1.0, lerpParams[1] - 1.0);//upperRightCorner-atPos;
+        Eigen::Vector2d distLowerRight = Eigen::Vector2d(lerpParams[0] - 1.0, lerpParams[1]);  //lowerRightCorner-atPos;
 
-        incrementedIndices[0] &= 0xff;
-        incrementedIndices[1] &= 0xff;
+        /*
+        RealType ulVal = clamp((distUpperLeft).dot(upperLeftGrad));
+        RealType urVal = clamp((distUpperRight).dot(upperRightGrad));
+        RealType lrVal = clamp((distLowerRight).dot(lowerRightGrad));
+        RealType llVal = clamp((distLowerLeft).dot(lowerLeftGrad));
+        */
 
-        const int topLeftIndex = (tableIndices[0] + permutations[incrementedIndices[1]]) & 0xff;
-        const int topRightIndex = (incrementedIndices[0] + permutations[incrementedIndices[1]]) & 0xff;
-        const int bottomLeftIndex = (tableIndices[0] + permutations[tableIndices[1]])&0xff;
-        const int bottomRightIndex = (incrementedIndices[0] + permutations[tableIndices[1]])&0xff;
+        RealType ulVal = ((distUpperLeft).dot(upperLeftGrad));
+        RealType urVal = ((distUpperRight).dot(upperRightGrad));
+        RealType lrVal = ((distLowerRight).dot(lowerRightGrad));
+        RealType llVal = ((distLowerLeft).dot(lowerLeftGrad));
 
-        const Vector2& upperLeftGrad = gradients[topLeftIndex];
-        const Vector2& upperRightGrad = gradients[topRightIndex];
-        const Vector2& lowerLeftGrad = gradients[bottomLeftIndex];
-        const Vector2& lowerRightGrad = gradients[bottomRightIndex];
+        //ulVal = (tableIndices[0] % 2) == 0 ? 1.0 : -1.0;
 
-        Vector2 tempVec4 = lerpParams;
-        Vector2 tempVec1 = Vector2(lerpParams[0], -(1.0 - lerpParams[1]));
-        Vector2 tempVec2 = Vector2(- (1.0 - lerpParams[0]), -(1.0 - lerpParams[1]));
-        Vector2 tempVec3 = Vector2(- (1.0 - lerpParams[0]), lerpParams[1]);
+        lerpParams[0] = std::clamp(lerpParams[0], 0.0, 1.0);
+        lerpParams[1] = std::clamp(lerpParams[1], 0.0, 1.0);
 
-        RealType ulVal = (tempVec1).dot(upperLeftGrad);
-        RealType urVal = (tempVec2).dot(upperRightGrad);
-        RealType lrVal = (tempVec3).dot(lowerRightGrad);
-        RealType llVal = (tempVec4).dot(lowerLeftGrad);
-
-        RealType lerpXTop =  s_interpolate(ulVal, urVal, lerpParams[0]);
-        RealType lerpXBottom = s_interpolate(llVal, lrVal, lerpParams[0]);
-
+        RealType lerpXTop    =  s_interpolate(ulVal, urVal, lerpParams[0]);
+        RealType lerpXBottom =  s_interpolate(llVal, lrVal, lerpParams[0]);
         RealType result = s_interpolate(lerpXBottom, lerpXTop, lerpParams[1]);
-
-        result = std::min(RealType(1.0), result);
-        result = std::max(RealType(-1.0), result);
 
         return result;
     }
 
-    template<ValidFunctor<RealType> Functor, bool normalize=true>
+    template<typename Functor, bool normalize=true>
     RealType fractalSumNoise
     (
         Vector2 atPos,
         int octaves,
         RealType baseFrequency,
         RealType persistence = RealType(.5),
-        const Functor& f = [](const RealType& noiseVal) {return noiseVal; }
-    )
+        const typename Functor& f = [](const typename RealType& noiseVal) {return noiseVal; }
+    ) const
     {
         RealType frequency = baseFrequency;
         RealType geoAmplitude = 1.0;
@@ -198,7 +208,7 @@ public:
         return sum;
     }
 
-    RealType fractalNoiseAbs(Vector2 atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5))
+    RealType fractalNoiseAbs(Vector2 atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5)) const
     {
         return fractalSumNoise
         (
@@ -214,7 +224,7 @@ public:
     }
 
     template<std::uint32_t axis = 0>
-    RealType fractalNoiseSin(Vector2 atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5))
+    RealType fractalNoiseSin(Vector2 atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5)) const
     {
         static_assert(axis < 2, "fractalNoiseSin() Axis element out of bounds");
 
