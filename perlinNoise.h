@@ -141,19 +141,10 @@ public:
         Eigen::Vector2d distUpperRight = Eigen::Vector2d(lerpParams[0] - 1.0, lerpParams[1] - 1.0);//upperRightCorner-atPos;
         Eigen::Vector2d distLowerRight = Eigen::Vector2d(lerpParams[0] - 1.0, lerpParams[1]);  //lowerRightCorner-atPos;
 
-        /*
-        RealType ulVal = clamp((distUpperLeft).dot(upperLeftGrad));
-        RealType urVal = clamp((distUpperRight).dot(upperRightGrad));
-        RealType lrVal = clamp((distLowerRight).dot(lowerRightGrad));
-        RealType llVal = clamp((distLowerLeft).dot(lowerLeftGrad));
-        */
-
         RealType ulVal = ((distUpperLeft).dot(upperLeftGrad));
         RealType urVal = ((distUpperRight).dot(upperRightGrad));
         RealType lrVal = ((distLowerRight).dot(lowerRightGrad));
         RealType llVal = ((distLowerLeft).dot(lowerLeftGrad));
-
-        //ulVal = (tableIndices[0] % 2) == 0 ? 1.0 : -1.0;
 
         lerpParams[0] = std::clamp(lerpParams[0], 0.0, 1.0);
         lerpParams[1] = std::clamp(lerpParams[1], 0.0, 1.0);
