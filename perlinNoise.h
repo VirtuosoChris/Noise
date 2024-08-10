@@ -178,14 +178,25 @@ public:
         return result;
     }
 
-    template<typename Functor, bool normalize=true>
     RealType fractalSumNoise
     (
         Vector2 atPos,
         int octaves,
         RealType baseFrequency,
-        RealType persistence = RealType(.5),
-        const typename Functor& f = [](const typename RealType& noiseVal) {return noiseVal; }
+        RealType persistence = RealType(.5)
+    ) const
+    {
+        return fractalSumNoise(atPos, octaves, baseFrequency, persistence, [](const RealType& noiseVal) {return noiseVal; });
+    }
+
+    template<ValidFunctor<RealType> Functor, bool normalize=true>
+    RealType fractalSumNoise
+    (
+        Vector2 atPos,
+        int octaves,
+        RealType baseFrequency,
+        RealType persistence,
+        const typename Functor& f
     ) const
     {
         RealType frequency = baseFrequency;
@@ -237,7 +248,7 @@ public:
             persistence,
             [=](const RealType& noiseVal)
             {
-                return std::sin<RealType>(offset + fractalNoiseAbs(atPos, octaves, baseFrequency, persistence));
+                return std::sin(offset + fractalNoiseAbs(atPos, octaves, baseFrequency, persistence));
             }
         );
     }

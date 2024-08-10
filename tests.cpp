@@ -59,7 +59,12 @@ int main(void)
 
     const auto& fractAbs = [](const PerlinGenerator<double>& p, const Eigen::Vector2d& coord)
         {
-            return p.fractalNoiseAbs(coord, 4, 1.0 / 128.0);
+            return p.fractalNoiseAbs(coord, 4, 1.0 / 64.0);
+        };
+
+    const auto& fractSin = [](const PerlinGenerator<double>& p, const Eigen::Vector2d& coord)
+        {
+            return p.fractalNoiseSin(coord, 6, 1.0 / 32.0, .5);
         };
 
     std::cout << "Making test1 (gradient slice)" << std::endl;
@@ -69,7 +74,11 @@ int main(void)
     std::cout << "Making test 3 (fractal noise, high persistence)" << std::endl;
     makeNoiseImage("test3.jpg", 512, 512, fract2);
 
-    std::cout << "Making test 4 (fractal noise, high persistence)" << std::endl;
+    std::cout << "Making test 4 (abs noise)" << std::endl;
     makeNoiseImage("test4.jpg", 128, 128, fractAbs);
+
+
+    std::cout << "Making test 4 (sin noise)" << std::endl;
+    makeNoiseImage("test5.jpg", 128, 128, fractSin);
 
 }
