@@ -62,9 +62,9 @@ inline T s_interpolate(T a, T b, T t)
 }
 
 template<typename Functor, typename RealType>
-concept ValidFunctor = requires(Functor f, RealType value)
+concept ValidFunctor = requires(Functor && f, RealType && value)
 {
-    { f(value) } -> std::same_as<RealType>;
+    { std::declval<RealType>() * f(value) } -> std::convertible_to<RealType>;
 };
 
 template <typename RealType = double>
