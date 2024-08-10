@@ -62,23 +62,38 @@ int main(void)
             return p.fractalNoiseAbs(coord, 4, 1.0 / 64.0);
         };
 
+    const auto& fractRidged = [](const PerlinGenerator<double>& p, const Eigen::Vector2d& coord)
+        {
+            return p.fractalNoiseRidged(coord, 4, 1.0 / 24.0, .5, 3.0);
+        };
+
     const auto& fractSin = [](const PerlinGenerator<double>& p, const Eigen::Vector2d& coord)
         {
-            return p.fractalNoiseSin(coord, 6, 1.0 / 32.0, .5);
+            // original 'marble texture' = imageData2[w + h * height] = 255 * ((sin( .0075*double(w)    + 8.0*3.14*summation )+1.0)*.5);
+            double baseFrequency = 1.0 / 32.0;
+            double noiseFrequency = 1.0 / 64.0;
+            double amplitude = 4.0 * 3.14;
+            double offset = coord[0];
+            double x = (offset * (2.0 * 3.14259) * baseFrequency);
+            return p.fractalNoiseSin(x, amplitude, coord, 8, noiseFrequency);
         };
 
     std::cout << "Making test1 (gradient slice)" << std::endl;
-    makeNoiseImage("test1.jpg", 256, 256, grad);
+    makeNoiseImage("gradient_slice.jpg", 256, 256, grad);
     std::cout << "Making test 2 (fractal noise)" << std::endl;
-    makeNoiseImage("test2.jpg", 512, 512, fract);
+    makeNoiseImage("fractal_sum.jpg", 512, 512, fract);
     std::cout << "Making test 3 (fractal noise, high persistence)" << std::endl;
-    makeNoiseImage("test3.jpg", 512, 512, fract2);
+    makeNoiseImage("fractal_sum_highp.jpg", 512, 512, fract2);
 
     std::cout << "Making test 4 (abs noise)" << std::endl;
-    makeNoiseImage("test4.jpg", 128, 128, fractAbs);
+    makeNoiseImage("abs_noise.jpg", 128, 128, fractAbs);
 
 
     std::cout << "Making test 4 (sin noise)" << std::endl;
-    makeNoiseImage("test5.jpg", 128, 128, fractSin);
+    makeNoiseImage("sin_noise.jpg", 128, 128, fractSin);
+
+
+    std::cout << "Making test 5 (ridged multifractal noise)" << std::endl;
+    makeNoiseImage("ridged_multifractal.jpg", 128, 128, fractRidged);
 
 }

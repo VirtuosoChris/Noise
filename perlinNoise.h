@@ -208,7 +208,7 @@ public:
         for (int i = 0; i < octaves; i++, geoAmplitude *= persistence, frequency *= RealType(2.0))
         {
             // assumes that the functor is monotonically increasing so 1.0 from the gradient will map to the largest value in our functor-noise
-            normFactor += geoAmplitude * f(RealType(1.0));
+            normFactor += geoAmplitude * 1.0;// f(RealType(1.0));
 
             RealType noiseVal = geoAmplitude * f(gradientNoise(atPos, frequency));
             sum += noiseVal;
@@ -234,22 +234,23 @@ public:
         );
     }
 
-    template<std::uint32_t axis = 0>
-    RealType fractalNoiseSin(Vector2 atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5)) const
+    RealType fractalNoiseRidged(Vector2 atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5), RealType power = 2.0) const
     {
-        static_assert(axis < 2, "fractalNoiseSin() Axis element out of bounds");
-
-        RealType offset = atPos[axis];
         return fractalSumNoise
         (
             atPos,
             octaves,
             baseFrequency,
             persistence,
-            [=](const RealType& noiseVal)
+            [&power](const RealType& noiseVal)
             {
-                return std::sin(offset + fractalNoiseAbs(atPos, octaves, baseFrequency, persistence));
+                return pow(1.0 - std::abs<RealType>(noiseVal), power);
             }
         );
+    }
+
+    RealType fractalNoiseSin(const double& x, const double& amplitude, const Vector2& atPos, int octaves, RealType baseFrequency, RealType persistence = RealType(.5)) const
+    {
+        return std::sin(x + amplitude * fractalNoiseAbs(atPos, octaves, baseFrequency, persistence));
     }
 };
